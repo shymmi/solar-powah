@@ -1,0 +1,87 @@
+---
+title: "Zachorowania na gruŸlicê"
+author: "Szymon Kasperski"
+date: "30 listopad 2017"
+output: html_document
+---
+
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE}
+devtools::install_github("rstudio/EDAWR")
+devtools::install_github("rstudio/dplyr")
+devtools::install_github("rstudio/ggplot2")
+```
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(EDAWR)
+library(ggplot2)
+library(dplyr)
+```
+
+## Krótkie podsumowanie
+
+Podsumowanie zbioru danych, na których operujemy:
+
+```{r echo=FALSE}
+summary(tb)
+```
+
+
+## Wykres 1
+
+Prezentacja liczb zachorowañ z podzia³em na p³eæ:
+
+```{r echo=FALSE}
+df_sexIll <- tb %>% 
+  replace(., is.na(.), 0) %>% #inaczej poni¿sza suma by siê nie zgadza³a
+  mutate(ppl_sum = child + adult + elderly)
+
+ ggplot(
+     df_sexIll,
+     aes(x = sex, y = ppl_sum/1000)
+ ) + 
+ ggtitle("Zachorowania w zale¿noœci od p³ci") +
+ geom_bar(
+     stat="identity",
+     position="identity"
+ ) +
+ xlab('P³eæ') + 
+ ylab('Liczba zachorowañ (tys.)')
+```
+
+
+## Wykres 2
+
+Prezentacja na wykresie liniowym sumarycznej liczby zachorowañ wœród dzieci, doros³ych i osób starszych w kolejnych latach:
+
+```{r echo=FALSE}
+children_df <- select(df_sexIll, year, child) %>% group_by(year) %>% summarize(count = sum(child, na.rm = T))
+adults_df <- select(df_sexIll, year, adult) %>% group_by(year) %>% summarize(count = sum(adult, na.rm = T))
+oldies_df <- select(df_sexIll, year, elderly) %>% group_by(year) %>% summarize(count = sum(elderly, na.rm = T))
+
+ggplot() +
+  ggtitle("Zachorowania w ró¿nym wieku") +
+  geom_line(data = children_df, aes(x = year, y = count/1000, color = "Dzieci")) +
+  geom_line(data = adults_df, aes(x = year, y = count/1000, color = "Doroœli")) +
+  geom_line(data = oldies_df, aes(x = year, y = count/1000, color = "Starsi")) +
+  xlab('Rok') + 
+  ylab('Liczba zachorowañ (tys.)') + 
+  labs(color="Legenda")
+```
+
+## Wykresy
+
+Prezentacja na wykresach liniowych sumarycznej liczby zachorowañ wœród dzieci, doros³ych i osób starszych w kolejnych latach, dla ka¿dego kraju:
+
+```{r echo=FALSE, fig.height=100, fig.width=12}
+children_countries_df <- select(df_sexIll, year, child, country) %>% group_by(country, year) %>% summarize(count = sum(child, na.rm = T))
+adults_countries_df <- select(df_sexIll, year, adult, country) %>% group_by(country, year) %>% summarize(count = sum(adult, na.rm = T))
+oldies_countries_df <- select(df_sexIll, year, elderly, country) %>% group_by(country, year) %>% summarize(count = sum(elderly, na.rm = T))
+
+ggplot() +
+  geom_line(data = children_countries_df, aes(x = year, y = count, color = "Dzieci")) +
+  geom_line(data = adults_countries_df, aes(x = year, y = count, color = "Doroœli")) +
+  geom_line(data = oldies_countries_df, aes(x = year, y = count, color = "Starsi")) +
+  xlab('Rok') + 
+  ylab('Liczba zachorowañ') + 
+  labs(color="Legenda") +
+  facet_wrap(~country, ncol = 4, scales = "free", shrink = FALSE)
+```
