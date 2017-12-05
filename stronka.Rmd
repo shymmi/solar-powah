@@ -1,7 +1,7 @@
 ---
 title: "Optymalizacja elektrowni s³onecznej"
 author: "Szymon Kasperski"
-date: "`r format(Sys.Date(), "%B %d, %Y")`"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output: 
   html_document: 
     toc: true
@@ -26,7 +26,7 @@ library(dplyr)
 
 ```{r import, cache=FALSE, include=FALSE}
 solar_data <- read.csv("elektrownie.csv", row.names=1)
-solar_data$data <- as.Date(solar_data$data, "%m/%d/%Y %k:%M")
+solar_data$data <- as.POSIXct(solar_data$data, format="%m/%d/%Y %H:%M")
 ```
 
 ## Krótkie podsumowanie - elevator speach
@@ -39,29 +39,70 @@ solar_data$data <- as.Date(solar_data$data, "%m/%d/%Y %k:%M")
 Dane zawieraj¹ '`r nrow(solar_data)`' obserwacji po '`r length(solar_data)`' atrybutów ka¿da. Poni¿ej znajduje siê podsumowanie wartoœci dla ka¿dego atrybutu.
 
 ### Dane czujnika
-```{r}
+```{r sensor_data}
 lapply(solar_data[, c('idsito', 'idmodel', 'idbrand', 'ageinmonths')], summary)
 ```
 Pierwsze 3 zawieraj¹ informacje o identyfikatorze, modelu i marce czujnika.
-W tym zbiorze mo¿na wyró¿niæ '`r length(table(solar_data$idsito))`' czujnikóW, o `r length(table(solar_data$idmodel))` ró¿nych modelach, wyprodukowanych przez `r length(table(solar_data$idbrand))` ró¿nych producentów. Wszystkie wartoœci tych atrybutów zosta³y znormalizowane i zawieraj¹ siê w przedziale <0:1>. Czwarty atrybut (tak samo znormalizowany) opisuje wiek danego czujnika
+W tym zbiorze mo¿na wyró¿niæ `r length(table(solar_data$idsito))` czujników, o `r length(table(solar_data$idmodel))` ró¿nych modelach, wyprodukowanych przez `r length(table(solar_data$idbrand))` ró¿nych producentów. Wszystkie wartoœci tych atrybutów zosta³y znormalizowane i zawieraj¹ siê w przedziale <0:1>. Czwarty atrybut (tak samo znormalizowany) opisuje wiek danego czujnika, jego wartoœæ jest sta³a dla ka¿dego idsito.
 
 ### Czas
-```{r}
+```{r time_data}
 lapply(solar_data[, c('anno', 'day', 'ora', 'data')], summary)
 ```
-Powy¿sze atrybuty opisuj¹ czas dokonania pomiaru. Anno okreœla rok dokonania pomiaru i przyjmuje dwie wartoœci; 2012 i 2013. Day, jak sama nazwa wskazuje, okreœla dzieñ dokonania pomiaru. Przyjmuje `r length(table(solar_data$day))` ró¿nych wartoœci, co sugeruje, ¿e odzwierciedla kalendarzowy dzieñ dla danego roku. Atrybut ora przyjmuje `r length(table(solar_data$ora))` ró¿nych wartoœci, co sugeruje, ¿e pomiary by³y dokonywane w 19 ró¿nych godzinach dla ró¿nych dób. Po przyrzeniu siê wartoœciom atrybutu _data_ mo¿na zauwa¿yæ, ¿e pomiary dla ka¿dego dnia by³y przeprowadzane w godzinach 2:00 - 20:00, co godzinê. Ostatni atrybut zawiera informacje zawarte w trzech poprzednich; rok, dzieñ, godzinê dokonania pomiaru w bardziej przystêpnej postaci - jako (nieznormalizowany) ci¹g znaków.
+Powy¿sze atrybuty opisuj¹ czas dokonania pomiaru. Anno okreœla rok dokonania pomiaru i przyjmuje dwie wartoœci; 2012 i 2013. Day, jak sama nazwa wskazuje, okreœla dzieñ dokonania pomiaru. Przyjmuje `r length(table(solar_data$day))` ró¿nych wartoœci, co sugeruje, ¿e odzwierciedla kalendarzowy dzieñ dla danego roku. Atrybut ora przyjmuje `r length(table(solar_data$ora))` ró¿nych wartoœci, co sugeruje, ¿e pomiary by³y dokonywane w 19 ró¿nych godzinach dla ró¿nych dób. Po przylrzeniu siê wartoœciom atrybutu *data* mo¿na zauwa¿yæ, ¿e pomiary dla ka¿dego dnia by³y przeprowadzane w godzinach 2:00 - 20:00, co godzinê. Ostatni atrybut zawiera informacje zawarte w trzech poprzednich; rok, dzieñ, godzinê dokonania pomiaru w bardziej przystêpnej postaci - jako (nieznormalizowany) ci¹g znaków.
 
 ### Po³o¿enie
-```{r}
-lapply(solar_data[, c('lat', 'lon', 'altitude', 'azimuth')], summary)
+```{r loc_data}
+lapply(solar_data[, c('lat', 'lon')], summary)
 ```
-Powy¿sze atrybuty opisuj¹ fizyczne po³o¿enie czujników. Wartoœci atrybutu lat opisuj¹ szerokoœæ geograficzn¹, a lon d³ugoœæ. Zakres wartoœci atrybutu lat to <`r min(solar_data[, 'lat'])`:`r max(solar_data[, 'lat'])`>, co sugeruje, ¿e czujniki po³o¿one by³y na podobnej szerokoœci geograficznej. Azimuth to azymut, czyli  k¹t zawarty miêdzy pó³nocn¹ czêœci¹ po³udnika odniesienia a danym kierunkiem poziomym. Dwa ostatnie atrybuty pozwalaj¹ okreœliæ pozycjê s³oñca wzglêdem czujnika.
+Powy¿sze atrybuty opisuj¹ fizyczne po³o¿enie czujników. Wartoœci atrybutu lat opisuj¹ szerokoœæ geograficzn¹, a lon d³ugoœæ. Zakres wartoœci atrybutu lat to <`r min(solar_data[, 'lat'])`:`r max(solar_data[, 'lat'])`>, co sugeruje, ¿e czujniki po³o¿one by³y na podobnej szerokoœci geograficznej.
 
 ### Warunki atmosferyczne
-```{r}
+```{r atmo_data}
 lapply(solar_data[, c('temperatura_ambiente', 'irradiamento', 'pressure', 'windspeed', 'humidity', 'dewpoint', 'windbearing', 'cloudcover', 'irr_pvgis_mod', 'icon')], summary)
 ```
 Powy¿sze atrybuty opisuj¹ aktualn¹ pogodê "mierzon¹" podczas zapisu danych przez czujnik. Opisuj¹ odpowiednio: temperaturê powietrza, stopieñ nas³onecznienia, ciœnienie atmosferyczne, prêdkoœæ wiatru, wilgotnoœæ, temperaturê punktu rosy, zachmurzenie i ponownie stopieñ nas³onecznienia, tym razem generowany przez pogodowe API (Photovoltaic Geographical Information System). Ostatnia zmienna (icon) przyjmuje tylko 7 ró¿nych wartoœci, co sugeruje, ¿e mo¿e reprezentowaæ "obecny stan pogody" (ikonê), obliczany przez czujnik lub, co jest bardziej prawdopodobne, dostarczany przez pogodowe API. Zdroworozs¹dkowo nas³onecznienie powinno pe³niæ kluczow¹ rolê przy generowaniu energii przez panele s³oneczne, zatem podwojenie obserwacji w tym przypadku zdaje siê byæ ca³kowicie uzasadnione; umo¿liwa to wyeliminowanie potencjalnych b³êdnych pomiarów.
 
+### Po³o¿enie s³oñca
 
+```{r sun_data}
+lapply(solar_data[, c('altitude', 'azimuth', 'dist')], summary)
+```
+ *Azimuth* to azymut, czyli  k¹t zawarty miêdzy pó³nocn¹ czêœci¹ po³udnika odniesienia a danym kierunkiem poziomym. Zmienna *altitude* opisuje wysokoœæ, prawdopodobnie s³oñca nad horyzontem, poniewa¿ jej wartoœci rosn¹ do godzin po³udniowych, a nastêpnie malej¹. Zmienna *dist* jest taka sama dla wszystkich czujników oraz zmienia siê ka¿dego dnia. Przygl¹daj¹c siê wykresowi zale¿noœci jej wartoœci od *day*(czyli dnia roku) ³atwo zauwa¿yæ jej cyklicznoœæ. Prawdopodobnie okreœla ona odleg³oœæ Ziemi od S³oñca w danym dniu. Ta grupa atrybutów pozwala okreœliæ po³o¿enie s³oñca wzglêdem czujnika.
 
+```{r plot_1}
+ggplot() + geom_line(data = solar_data, aes(x = day, y = dist))
+```
+
+### PCNM
+```{r pcnm_data}
+lapply(solar_data[, 33:47], summary)
+```
+Atrybuty PCNM (z angielksiego Principal coordinates of neighbour matrices) to najprawdopodobniej zmienne pozwalaj¹ce opisaæ dok³adniej po³o¿enie ka¿dego czujnika wzglêdem innych czujnikóW. Pozwalaj¹ na bardziej wnikliw¹ analizê po³o¿enia dla ka¿dego z czujników. Wartoœci tych parametrów s¹ sta³e dla *idsito*.
+
+### Atrybuty *I
+```{r}
+lapply(solar_data[, c(20:27, 30:32, 49)], summary)
+```
+Atrybuty z i na koñcu zawieraj¹ sta³e wartoœci dla obserwacji z danego czujnika o danej godzinie ka¿dego dnia. Dane te zatem s¹ cykliczne i dla ka¿dego atrybutu uzyskuj¹ maksymalnie 19 ró¿nych wartoœci (19 pomiarów w ka¿dej dobie). Nie do koñca widzê zale¿noœæ pomiêdzy danymi z  i bez 'i' T_T
+
+### Energia
+```{r energy_data}
+lapply(solar_data["kwh"], summary)
+```
+Ostatni analizowany atrybut to znormalizowana do przedzia³u <0:1> wartoœæ wytworzonej energii przez dany czujnik w danym dniu o danej godzinie. Wartoœæ tej zmiennej ma docelowo zostaæ "przewidziana" na podstawie wartoœci pozosta³ych parametrów.
+
+## Czyszczenie danych
+W tej sekcji opsi sposobu "czyszczenia danych".
+
+## Korelacja atrybutów
+W tej sekcji tabelka korelacji pomiêdzy wszystkimi(?) atrybutami
+
+## Interaktywny wykres
+Interaktywny wykres, np. wybór miesi¹ca (suwak), roku (suwak) -> wytwarzanie energii wzgl pory roku dla firmy/urzadzenia/marki.
+
+## Próba stworzenia regresora
+Sekcja próbuj¹ca stworzyæ regresor
+
+## Analiza modelu regresji
+Jaki model i czy ma sens.
