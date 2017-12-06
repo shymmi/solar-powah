@@ -13,6 +13,8 @@ knitr::opts_chunk$set(echo = TRUE)
 devtools::install_github("rstudio/EDAWR")
 devtools::install_github("rstudio/dplyr")
 devtools::install_github("rstudio/ggplot2")
+devtools::install_github("ropensci/plotly")
+devtools::install_github("taiyun/corrplot")
 #wiecej bibliotek
 ```
 
@@ -21,6 +23,8 @@ set.seed(23) #kod zapewniaj¹cy powtarzalnoœæ wyników
 library(EDAWR)
 library(ggplot2)
 library(dplyr)
+library(plotly)
+library(corrplot)
 #wiecej bibliotek
 ```
 
@@ -71,20 +75,20 @@ lapply(solar_data[, c('altitude', 'azimuth', 'dist')], summary)
  *Azimuth* to azymut, czyli  k¹t zawarty miêdzy pó³nocn¹ czêœci¹ po³udnika odniesienia a danym kierunkiem poziomym. Zmienna *altitude* opisuje wysokoœæ, prawdopodobnie s³oñca nad horyzontem, poniewa¿ jej wartoœci rosn¹ do godzin po³udniowych, a nastêpnie malej¹. Zmienna *dist* jest taka sama dla wszystkich czujników oraz zmienia siê ka¿dego dnia. Przygl¹daj¹c siê wykresowi zale¿noœci jej wartoœci od *day*(czyli dnia roku) ³atwo zauwa¿yæ jej cyklicznoœæ. Prawdopodobnie okreœla ona odleg³oœæ Ziemi od S³oñca w danym dniu. Ta grupa atrybutów pozwala okreœliæ po³o¿enie s³oñca wzglêdem czujnika.
 
 ```{r plot_1}
-ggplot() + geom_line(data = solar_data, aes(x = day, y = dist))
+ggplot() + geom_line(data = solar_data, aes(x = day, y = dist)) + labs(title="Zmiana atrybutu dist w dniach roku")
 ```
 
 ### PCNM
 ```{r pcnm_data}
 lapply(solar_data[, 33:47], summary)
 ```
-Atrybuty PCNM (z angielksiego Principal coordinates of neighbour matrices) to najprawdopodobniej zmienne pozwalaj¹ce opisaæ dok³adniej po³o¿enie ka¿dego czujnika wzglêdem innych czujnikóW. Pozwalaj¹ na bardziej wnikliw¹ analizê po³o¿enia dla ka¿dego z czujników. Wartoœci tych parametrów s¹ sta³e dla *idsito*.
+Atrybuty PCNM (z angielksiego Principal coordinates of neighbour matrices) to najprawdopodobniej zmienne pozwalaj¹ce opisaæ dok³adniej po³o¿enie ka¿dego czujnika wzglêdem innych czujnikóW. Pozwalaj¹ na bardziej wnikliw¹ analizê po³o¿enia dla ka¿dego z czujników poprzez stworzenie w³asnej macierzy s¹siedztwa dla ka¿dego z nich. Wartoœci tych parametrów s¹ sta³e dla *idsito*.
 
 ### Atrybuty *I
 ```{r}
-lapply(solar_data[, c(20:27, 30:32, 49)], summary)
+lapply(solar_data[, c(20:26, 30:32, 49)], summary)
 ```
-Atrybuty z i na koñcu zawieraj¹ sta³e wartoœci dla obserwacji z danego czujnika o danej godzinie ka¿dego dnia. Dane te zatem s¹ cykliczne i dla ka¿dego atrybutu uzyskuj¹ maksymalnie 19 ró¿nych wartoœci (19 pomiarów w ka¿dej dobie). Nie do koñca widzê zale¿noœæ pomiêdzy danymi z  i bez 'i' T_T
+Atrybuty pogodowe z *i* na koñcu zapewne s¹ wynikiem transformacji wartoœci tych samych atrybutów bez litery *i*. Wydaje siê byæ prawdopodobne, ¿e do obliczenia ich wartoœci pos³u¿y³, wspomniany w poprzedniej grupie atrybutów, aglorytm radz¹cy sobie z problemem autokorelacji przestrzennej, wynikaj¹cej z bliskiego po³o¿enia czujnikóW.
 
 ### Energia
 ```{r energy_data}
@@ -92,17 +96,53 @@ lapply(solar_data["kwh"], summary)
 ```
 Ostatni analizowany atrybut to znormalizowana do przedzia³u <0:1> wartoœæ wytworzonej energii przez dany czujnik w danym dniu o danej godzinie. Wartoœæ tej zmiennej ma docelowo zostaæ "przewidziana" na podstawie wartoœci pozosta³ych parametrów.
 
-## Czyszczenie danych
-W tej sekcji opsi sposobu "czyszczenia danych".
+## Przetwarzanie brakuj¹cych danych
+W samym zbiorze problem "brakuj¹cych danych" nie wystêpuje - wszêdzie jakieœ dane liczbowe s¹, natomiast po analizie wykresu w póŸniejszym rozdziale mo¿na zauwa¿yæ problem awarii czujnika. W tym przypadku nale¿y brakuj¹ce obserwacje (produkcja energii na poziomie 0) zast¹piæ innymi, wiarygodnymi.
+z wykresu -> awaria czujnika, co zrobiæ ?! - mo¿e dane z poprzedniego roku dla tego miesi¹ca? 
+gdy kwh==0 i irri>0 -> nie ma energii, a by³o s³oñce
+gdy irri==0 i kwh>0 -> energia wyprodukowana, a s³oñca ni ma
+```{r data_repair}
+solar_data_repaired <- solard_data #tutaj bêd¹ najró¿niejsze poprawki
+```
+
 
 ## Korelacja atrybutów
-W tej sekcji tabelka korelacji pomiêdzy wszystkimi(?) atrybutami
+Stworzono macierz korelacji pomiêdzy (prawie)wszystkimi atrybutami (bez atrybutów: "data" oraz "idsito")
+```{r corr_matrix, fig.width=10, fig.height=10}
+#cor <- rcorr(as.matrix(solar_data[, !names(solar_data) %in% c("data", "idsito")]))
+corr_matrix <- cor(as.matrix(solar_data[, !names(solar_data) %in% c("data", "idsito")]), method = "spearman")
+corrplot(as.matrix(corr_matrix), order = "FPC", type="lower", tl.col = "black", tl.srt = 45)
+```
+Analizuj¹c powy¿sz¹ macierz pod k¹tem korelacji atrybutu *kwh* z pozosta³ymiy atrybutami mo¿na ³atwo zauwa¿yæ siln¹ odwrotn¹ korelacjê z wartoœci¹ *humidity*(wilgotnoœæ) co jest logiczne, poniewa¿ opad deszczu skutecznie zmniejsza iloœæ wytwarzanej energii przez panel s³oneczny. Atrybut *kwh* jest skorelowany silnie z wartoœci¹ *irri*, czyli nas³onecznienia oraz s³abo z atrybutami opisuj¹cymi temperaturê.
+
+Mo¿na tak¿e zauwa¿yæ na niektórych atrybutach s³ab¹ odwrotn¹ korelacjê pomiêdzy parami atrybut-atrybuti. (byæ mo¿e i jak invert?)
+
 
 ## Interaktywny wykres
-Interaktywny wykres, np. wybór miesi¹ca (suwak), roku (suwak) -> wytwarzanie energii wzgl pory roku dla firmy/urzadzenia/marki.
+```{r interactive_plot, fig.width=9, fig.height=7, fig.align='center'}
+solar_data_monthYear <-  solar_data %>% mutate(month_year = format(as.POSIXct(data), "%Y/%m")) %>% group_by(idsito, month_year) %>% summarise(sum_of_kwh = sum(kwh))
+plot <- ggplot() + geom_line(data=solar_data_monthYear, aes(x=month_year, y=sum_of_kwh, group=idsito, color=factor(x = 1*idsito, labels=c(1:17)))) + labs(color="Legenda") + labs(title="Miesiêczna produkcja energi dla czujników", x="year_month") +
+theme(axis.text.x=element_text(angle=90, vjust=0.5), axis.title.x = element_text(vjust=2.5))
+ggplotly(plot)
+```
+Powy¿szy interaktywny wykres pozwala porównaæ sumê wyprodukowanej energii przez czujniki w ka¿dym miesi¹cu. 
+
+Analizuj¹c wykres mo¿na dojœæ do nastêpuj¹cych wniosków:
+* czujniki ulegaj¹ awariom; potencjalne awarie wystêpuj¹ w miejscach drastycznego spadku produkowanej energii do 0 (np. czujnik 16 w sierpniu 2013r., ),
+* krzywa miesiêcznej sumy produkowanej energii dla ka¿dego czujnika ma podobny kszta³t,
+* czujnik 10 zdecydowanie lepiej prosperowa³ w ostatnim kwartale 2012 w porównaniu do reszty. 
 
 ## Próba stworzenia regresora
+```{r regessor_creation}
+#test/learning data 
+#use some regression algorithms
+#RMSE 
+```
 Sekcja próbuj¹ca stworzyæ regresor
+Usuniêcie pomiarów czujnika 10.
 
 ## Analiza modelu regresji
+```{r regressor_rating}
+#find best + analyze
+```
 Jaki model i czy ma sens.
