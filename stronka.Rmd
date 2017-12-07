@@ -15,16 +15,18 @@ devtools::install_github("rstudio/dplyr")
 devtools::install_github("rstudio/ggplot2")
 devtools::install_github("ropensci/plotly")
 devtools::install_github("taiyun/corrplot")
+#install.packages("caret"", dependencies = TRUE)
+#install.packages("mxnet")
 #wiecej bibliotek
 ```
 
 ```{r libraries, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
-set.seed(23) #kod zapewniaj¹cy powtarzalnoœæ wyników
 library(EDAWR)
 library(ggplot2)
 library(dplyr)
 library(plotly)
 library(corrplot)
+library(caret)
 #wiecej bibliotek
 ```
 
@@ -96,27 +98,19 @@ lapply(solar_data["kwh"], summary)
 ```
 Ostatni analizowany atrybut to znormalizowana do przedzia³u <0:1> wartoœæ wytworzonej energii przez dany czujnik w danym dniu o danej godzinie. Wartoœæ tej zmiennej ma docelowo zostaæ "przewidziana" na podstawie wartoœci pozosta³ych parametrów.
 
-## Przetwarzanie brakuj¹cych danych
-W samym zbiorze problem "brakuj¹cych danych" nie wystêpuje - wszêdzie jakieœ dane liczbowe s¹, natomiast po analizie wykresu w póŸniejszym rozdziale mo¿na zauwa¿yæ problem awarii czujnika. W tym przypadku nale¿y brakuj¹ce obserwacje (produkcja energii na poziomie 0) zast¹piæ innymi, wiarygodnymi.
-z wykresu -> awaria czujnika, co zrobiæ ?! - mo¿e dane z poprzedniego roku dla tego miesi¹ca? 
-gdy kwh==0 i irri>0 -> nie ma energii, a by³o s³oñce
-gdy irri==0 i kwh>0 -> energia wyprodukowana, a s³oñca ni ma
-```{r data_repair}
-solar_data_repaired <- solard_data #tutaj bêd¹ najró¿niejsze poprawki
-```
-
-
 ## Korelacja atrybutów
 Stworzono macierz korelacji pomiêdzy (prawie)wszystkimi atrybutami (bez atrybutów: "data" oraz "idsito")
 ```{r corr_matrix, fig.width=10, fig.height=10}
 #cor <- rcorr(as.matrix(solar_data[, !names(solar_data) %in% c("data", "idsito")]))
-corr_matrix <- cor(as.matrix(solar_data[, !names(solar_data) %in% c("data", "idsito")]), method = "spearman")
+corr_matrix <- cor(as.matrix(solar_data[, !names(solar_data) %in% c("data", "anno")]), method = "spearman")
 corrplot(as.matrix(corr_matrix), order = "FPC", type="lower", tl.col = "black", tl.srt = 45)
 ```
-Analizuj¹c powy¿sz¹ macierz pod k¹tem korelacji atrybutu *kwh* z pozosta³ymiy atrybutami mo¿na ³atwo zauwa¿yæ siln¹ odwrotn¹ korelacjê z wartoœci¹ *humidity*(wilgotnoœæ) co jest logiczne, poniewa¿ opad deszczu skutecznie zmniejsza iloœæ wytwarzanej energii przez panel s³oneczny. Atrybut *kwh* jest skorelowany silnie z wartoœci¹ *irri*, czyli nas³onecznienia oraz s³abo z atrybutami opisuj¹cymi temperaturê.
+Analizuj¹c powy¿sz¹ macierz pod k¹tem korelacji atrybutu *kwh* z pozosta³ymiy atrybutami mo¿na ³atwo zauwa¿yæ odwrotn¹ korelacjê z wartoœci¹ *humidity*(wilgotnoœæ) co jest logiczne, poniewa¿ opad deszczu, któremu towarzysz¹ chmury, skutecznie zmniejsza iloœæ wytwarzanej energii przez panel s³oneczny.
+Wystêpuje równie¿ odwrotna korelacja z wartoœci¹ atrybutu azimuthi.
+
+Co najwa¿niejsze, atrybut *kwh* jest skorelowany silnie z wartoœciami *irri* oraz *irri_pvgis_mod*, czyli atrybutami opisuj¹cymi nas³onecznienie.
 
 Mo¿na tak¿e zauwa¿yæ na niektórych atrybutach s³ab¹ odwrotn¹ korelacjê pomiêdzy parami atrybut-atrybuti. (byæ mo¿e i jak invert?)
-
 
 ## Interaktywny wykres
 ```{r interactive_plot, fig.width=9, fig.height=7, fig.align='center'}
@@ -129,20 +123,89 @@ Powy¿szy interaktywny wykres pozwala porównaæ sumê wyprodukowanej energii przez 
 
 Analizuj¹c wykres mo¿na dojœæ do nastêpuj¹cych wniosków:
 * czujniki ulegaj¹ awariom; potencjalne awarie wystêpuj¹ w miejscach drastycznego spadku produkowanej energii do 0 (np. czujnik 16 w sierpniu 2013r., ),
-* krzywa miesiêcznej sumy produkowanej energii dla ka¿dego czujnika ma podobny kszta³t,
+* krzywa miesiêcznej sumy produkowanej energii dla grupy czujników ma podobny kszta³t,
+* czêœæ czujników odnotowa³a bardzo nisk¹ produkcjê energii w styczniu 2013r., efekt ten móg³ byæ spowodowany przykryciem ich przez œnieg
 * czujnik 10 zdecydowanie lepiej prosperowa³ w ostatnim kwartale 2012 w porównaniu do reszty. 
 
-## Próba stworzenia regresora
-```{r regessor_creation}
-#test/learning data 
-#use some regression algorithms
-#RMSE 
+## Przetwarzanie brakuj¹cych danych
+
+Z niewyjaœnionych przyczyn `r sum(is.na(solar_data))` wartoœci zmiennej *data* zosta³o Ÿle zapisanych po zmianie formatu tej kolumny z tekstu na POSIXct. Z racji ¿e obserwacji tych jest garstka, zosta³y one usuniête. 
+
+W pierwotnym zbiorze problem pustych danych nie wystêpuje - wszystkie dane na pierwszy rzut oka zdaj¹ siê byæ racjonalne. Po analizie wykresu z poprzedniego rozdzia³u mo¿na zauwa¿yæ problem awarii czujnika, czyli brakuj¹cych pomiarów wyprodukowanej energii przez dany czujnik. Problem ten wystêpuje zapewne nie tylko w tym jednym przypadku (czujnik 16, sierpieñ 2013), ale równie¿ przy innych pomiarach. Dla stworzenia najlepszego modelu predykcji nale¿y zapewniæ najlepsz¹ jakoœæ pomiarów dla atrybutów najsilniej skorelowanych z *kwh*. W zwi¹zku z tym, brakuj¹ce pomiary *kwh* (gdy wartoœæ wynosi 0), gdy nas³onecznienie ma wartoœæ wiêksz¹ od 0 i takie, które zanotowa³y niezerow¹ produkcjê energii przy zerowym nas³onecznieniu nale¿y rozwa¿yæ ponownie i przypisaæ im bardziej racjonalne wartoœci.
+
+Ze zbioru danych usuniêto obserwacje zwi¹zane z czujnikami 10 i 16. Obserwacjom, których *kwh* wynosi³o 0, a nas³onecznienie by³o wiêksze od zera przypisano œredni¹ wartoœæ wytworzonej energii w danej godzinie w danym tygodniu przez dany czujnik. 
+
+```{r data_repair}
+getMonthsMean <- function(dataset, id, yearNumb, monthNumb, hour) {
+  return(dataset %>% filter(idsito == id) %>% filter(anno != yearNumb) %>% filter(month == monthNumb) %>% filter(ora == hour) %>% select(kwh) %>% colMeans() %>% unname())
+} 
+
+solar_data_repaired <- solar_data[complete.cases(solar_data), ] %>% mutate(week = strftime(data, format="%W")) %>% mutate(month = strftime(data, format="%m"))
+solar_data_repaired <- solar_data_repaired %>% filter(idsito != 0.25) #usuniêcie pomiarów z czujnika 10
+solar_data_repaired <- solar_data_repaired %>% group_by(idsito, anno, month, ora) %>% 
+  mutate(kwh = ifelse(sum(kwh) == 0 & idsito == 0.4 & anno == 2013 & month == "08", getMonthsMean(solar_data_repaired, idsito, anno, month, ora), kwh))
+#próba uzupe³nienia brakuj¹cych wartoœci czujnika 16
+solar_data_repaired$kwh[is.na(solar_data_repaired$kwh)] <- 0 #przywrócenie wartoœci 0 dla nieuzupe³nionych elementów
+solar_data_repaired <- solar_data_repaired %>% group_by(idsito, anno, week, ora) %>% mutate(kwh = ifelse(kwh == 0 & (irradiamento > 0 | irr_pvgis_mod > 0), mean(kwh), kwh))
+solar_data_repaired <- solar_data_repaired %>% group_by(idsito, anno, week, ora) %>% mutate(irradiamento = ifelse(irradiamento == 0 && kwh > 0, mean(irradiamento), irradiamento))
+solar_data_repaired <- solar_data_repaired %>% group_by(idsito, anno, week, ora) %>% mutate(irr_pvgis_mod = ifelse(irr_pvgis_mod == 0 && kwh > 0, mean(irradiamento), irradiamento))
 ```
-Sekcja próbuj¹ca stworzyæ regresor
-Usuniêcie pomiarów czujnika 10.
+
+<!-- ## Próba stworzenia regresora -->
+<!-- ```{r regessor_creation} -->
+<!-- set.seed(23) #kod zapewniaj¹cy powtarzalnoœæ wyników -->
+
+<!-- inTraining <- -->
+<!--     createDataPartition( -->
+<!--         y = solar_data_repaired$kwh, -->
+<!--         p = .75, -->
+<!--         list = FALSE) -->
+
+<!-- training <- solar_data_repaired[ inTraining,] -->
+<!-- testing  <- solar_data_repaired[-inTraining,] -->
+
+<!-- ctrl <- trainControl( -->
+<!--     method = "repeatedcv", -->
+<!--     number = 2, -->
+<!--     repeats = 5) -->
+
+
+<!-- fitLM <- train(kwh ~ ., -->
+<!--              data = training, -->
+<!--              method = "lm", -->
+<!--              trControl = ctrl, -->
+<!--              importance = TRUE) -->
+
+<!-- fitRF <- train(kwh ~ ., -->
+<!--              data = training, -->
+<!--              method = "rf", -->
+<!--              trControl = ctrl, -->
+<!--              importance = TRUE) -->
+
+<!-- fitLARS<- train(kwh ~ ., -->
+<!--              data = training, -->
+<!--              method = "lars", -->
+<!--              trControl = ctrl, -->
+<!--              importance = TRUE)#Least Angle Regression -->
+
+<!-- fitGBM <- train(kwh ~ ., -->
+<!--              data = training, -->
+<!--              method = "gbm", -->
+<!--              trControl = ctrl, -->
+<!--              importance = TRUE) -->
+
+<!-- fitLM$results$RMSE -->
+<!-- fitRF$results$RMSE -->
+<!-- fitLARS$results$RMSE -->
+<!-- fitGBM$results$RMSE -->
+<!-- ``` -->
+Stworzono 4 modele regresji u¿ywaj¹ce metod: regresji liniowej, random forest, least angle regression, uczenia maszynowego. Najlepszy wyniki zanotowano dla gbm, którego b³¹d œredniokwadratowy wyniós³ <!--`r min(fitGBM$results$RMSE)`-->.
 
 ## Analiza modelu regresji
 ```{r regressor_rating}
-#find best + analyze
+#nowe pole, jako œrednia dwoch irra?
+#usuniêcie wszystkich nieistotnych atrybutów?
+
+#varImp(fitGBM)
 ```
-Jaki model i czy ma sens.
+Opis zmiennych
