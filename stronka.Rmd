@@ -6,13 +6,23 @@ output:
   html_document: 
     toc: true
 ---
+<style>
+body 
+  {
+    text-align: justify
+  }
+div.hidecode + pre
+  {
+    display: none
+  }
+</style>
 
 ## Krótkie podsumowanie
-Wynikiem przeprowadzonych badañ jest stworzony model predykcji wytworzonej energii przez panel s³oneczny w danej godzinie na podstawie informacji dostarczonych przez czujnik znajduj¹cy siê przy nim. Badania pokazuj¹, ¿e z du¿¹ pewnoœci¹ mo¿na przewidzieæ iloœæ wyprodukowanej energii na podstawie stanu pogody zanotowanego przez czujnik przy panelu. Kluczowymi atrybutami okaza³y siê nas³onecznienie, zachmurzenie i wilgotnoœæ, co nie jest szokuj¹ce. Wa¿n¹ obserwacj¹ jest równie¿ cyklicznoœæ œredniej wyprodukowanej energii przez panel s³oneczny w ci¹gu roku. W miesi¹cach zimowych panele produkuj¹ znacznie mniej energii ni¿ w miesi¹cach letnich, czasami bardzo znikome iloœci. Badania pokazuj¹, ¿e idealne miejsce na umiejscowienie panelu s³onecznego
+Wynikiem przeprowadzonych badañ jest stworzony model predykcji wytworzonej energii przez panel s³oneczny w danej godzinie na podstawie informacji dostarczonych przez czujnik znajduj¹cy siê przy nim. Badania pokazuj¹, ¿e z du¿¹ pewnoœci¹ mo¿na przewidzieæ iloœæ wyprodukowanej energii na podstawie stanu pogody zanotowanego przez czujnik przy panelu. Kluczowymi atrybutami okaza³y siê nas³onecznienie, zachmurzenie i wilgotnoœæ, co nie jest szokuj¹ce. Wa¿n¹ obserwacj¹ jest równie¿ cyklicznoœæ œredniej wyprodukowanej energii przez panel s³oneczny w ci¹gu roku jak i zale¿noœæ pomiêdzy wyprodukowan¹ energi¹, a godzin¹. W miesi¹cach zimowych panele produkuj¹ znacznie mniej energii ni¿ w miesi¹cach letnich, czasami bardzo znikome iloœci. Badania pokazuj¹, ¿e idealne miejsce na umiejscowienie panelu s³onecznego
 to takie, które ma du¿e nas³onecznienie podczas ca³ego roku i gdzie niebo jest bezchmurne. 
 
 ```{r setup, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 #kod wyliczaj¹cy wykorzystane biblioteki
 devtools::install_github("rstudio/EDAWR")
 devtools::install_github("rstudio/dplyr")
@@ -37,115 +47,123 @@ library(caret)
 ```{r import, cache=FALSE, include=FALSE}
 solar_data <- read.csv("elektrownie.csv", row.names=1)
 solar_data$data <- as.POSIXct(solar_data$data, format="%m/%d/%Y %H:%M")
-solar_data_copy <- solar_data
 ```
 
-## Wstêp, Rozmiar zbioru i podstawowe statystyki.
+## Wstêp
 
-Celem przeprowadzonych badañ by³o stworzenie regresora pozwalaj¹cego jak najlepiej przewidzieæ iloœæ wyprodukowanej energii przez panel s³oneczny w danej godzinie, na podstawie dostarczonych informacji. 
-Dane zawieraj¹ `r nrow(solar_data)` obserwacji, po `r length(solar_data)` atrybutów ka¿da. Poni¿ej znajduje siê próba opisania wszystkich atrybutów wraz z krótkimi statystykami dotycz¹cymi rozk³adu ich wartoœci.
+Celem przeprowadzonych badañ by³o stworzenie regresora pozwalaj¹cego jak najlepiej przewidzieæ iloœæ wyprodukowanej energii przez panel s³oneczny w danej godzinie na podstawie dostarczonych informacji. 
+Dane wejœciowe zawiera³y pomiary zanotowane przez czujniki przy panelach s³onecznych oraz wytworzon¹ przez nie energie. Ka¿da obserwacja to ww pomiary oraz iloœæ wyprodukowanej energii przez konkretny czujnik w danym dniu i danej godzinie.
+Na dane sk³ada siê `r nrow(solar_data)` obserwacji, po `r length(solar_data)` atrybutów ka¿da. Poni¿ej znajduje siê próba opisania wszystkich atrybutów wraz z krótkimi statystykami dotycz¹cymi rozk³adu ich wartoœci.
 
 ### Dane czujnika
-```{r sensor_data}
+```{r sensor_data, echo=FALSE}
 lapply(solar_data[, c('idsito', 'idmodel', 'idbrand', 'ageinmonths')], summary)
 ```
-Pierwsze 3 zawieraj¹ informacje o identyfikatorze, modelu i marce czujnika.
+
+Pierwsze 3 kolumny zawieraj¹ informacje o identyfikatorze, modelu i marce czujnika.
 W tym zbiorze mo¿na wyró¿niæ `r length(table(solar_data$idsito))` czujników, o `r length(table(solar_data$idmodel))` ró¿nych modelach, wyprodukowanych przez `r length(table(solar_data$idbrand))` ró¿nych producentów. Wszystkie wartoœci tych atrybutów zosta³y znormalizowane i zawieraj¹ siê w przedziale <0:1>. Czwarty atrybut (tak samo znormalizowany) opisuje wiek danego czujnika, jego wartoœæ jest sta³a dla ka¿dego idsito.
 
 ### Czas
-```{r time_data}
+```{r time_data, echo=FALSE}
 lapply(solar_data[, c('anno', 'day', 'ora', 'data')], summary)
 ```
-Powy¿sze atrybuty opisuj¹ czas dokonania pomiaru. Anno okreœla rok dokonania pomiaru i przyjmuje dwie wartoœci; 2012 i 2013. Day, jak sama nazwa wskazuje, okreœla dzieñ dokonania pomiaru. Przyjmuje `r length(table(solar_data$day))` ró¿nych wartoœci, co sugeruje, ¿e odzwierciedla kalendarzowy dzieñ dla danego roku. Atrybut ora przyjmuje `r length(table(solar_data$ora))` ró¿nych wartoœci, co sugeruje, ¿e pomiary by³y dokonywane w 19 ró¿nych godzinach dla ró¿nych dób. Po przylrzeniu siê wartoœciom atrybutu *data* mo¿na zauwa¿yæ, ¿e pomiary dla ka¿dego dnia by³y przeprowadzane w godzinach 2:00 - 20:00, co godzinê. Ostatni atrybut zawiera informacje zawarte w trzech poprzednich; rok, dzieñ, godzinê dokonania pomiaru w bardziej przystêpnej postaci - jako (nieznormalizowany) ci¹g znaków.
+
+Powy¿sze atrybuty opisuj¹ czas dokonania pomiaru. *Anno* to rok, przyjmuje dwie wartoœci; 2012 i 2013. *Day*, jak sama nazwa wskazuje, to dzieñ. Przyjmuje `r length(table(solar_data$day))` ró¿nych wartoœci, co sugeruje, ¿e odzwierciedla kalendarzowy dzieñ dla danego roku. Atrybut *ora* przyjmuje `r length(table(solar_data$ora))` ró¿nych wartoœci, co sugeruje, ¿e pomiary by³y dokonywane w 19 ró¿nych godzinach dla ró¿nych dób. Po przyjrzeniu siê wartoœciom atrybutu *data* mo¿na zauwa¿yæ, ¿e pomiary dla ka¿dego dnia by³y przeprowadzane w godzinach 2:00 - 20:00, co godzinê. Ostatni atrybut (*data*) zawiera informacje zawarte w trzech poprzednich; rok, dzieñ, godzinê dokonania pomiaru w bardziej przystêpnej postaci - jako (nieznormalizowany) ci¹g znaków.
 
 ### Po³o¿enie
-```{r loc_data}
+```{r loc_data, echo=FALSE}
 lapply(solar_data[, c('lat', 'lon')], summary)
 ```
-Powy¿sze atrybuty opisuj¹ fizyczne po³o¿enie czujników. Wartoœci atrybutu lat opisuj¹ szerokoœæ geograficzn¹, a lon d³ugoœæ. Zakres wartoœci atrybutu lat to <`r min(solar_data[, 'lat'])`:`r max(solar_data[, 'lat'])`>, co sugeruje, ¿e czujniki po³o¿one by³y na podobnej szerokoœci geograficznej.
+
+Powy¿sze atrybuty opisuj¹ fizyczne po³o¿enie czujników. Wartoœci atrybutu *lat* opisuj¹ szerokoœæ geograficzn¹, a *lon* d³ugoœæ. Zakres wartoœci atrybutu lat to <`r min(solar_data[, 'lat'])`:`r max(solar_data[, 'lat'])`>, co sugeruje, ¿e czujniki po³o¿one by³y na podobnej szerokoœci geograficznej.
 
 ### Warunki atmosferyczne
-```{r atmo_data}
+```{r atmo_data, echo=FALSE}
 lapply(solar_data[, c('temperatura_ambiente', 'irradiamento', 'pressure', 'windspeed', 'humidity', 'dewpoint', 'windbearing', 'cloudcover', 'irr_pvgis_mod', 'icon')], summary)
 ```
-Powy¿sze atrybuty opisuj¹ aktualn¹ pogodê "mierzon¹" podczas zapisu danych przez czujnik. Opisuj¹ odpowiednio: temperaturê powietrza, stopieñ nas³onecznienia, ciœnienie atmosferyczne, prêdkoœæ wiatru, wilgotnoœæ, temperaturê punktu rosy, zachmurzenie i ponownie stopieñ nas³onecznienia, tym razem generowany przez pogodowe API (Photovoltaic Geographical Information System). Ostatnia zmienna (icon) przyjmuje tylko 7 ró¿nych wartoœci, co sugeruje, ¿e mo¿e reprezentowaæ "obecny stan pogody" (ikonê), obliczany przez czujnik lub, co jest bardziej prawdopodobne, dostarczany przez pogodowe API. Zdroworozs¹dkowo nas³onecznienie powinno pe³niæ kluczow¹ rolê przy generowaniu energii przez panele s³oneczne, zatem podwojenie obserwacji w tym przypadku zdaje siê byæ ca³kowicie uzasadnione; umo¿liwa to wyeliminowanie potencjalnych b³êdnych pomiarów.
+
+Powy¿sze atrybuty opisuj¹ aktualn¹ pogodê "zmierzon¹" podczas zapisu danych przez czujnik. Opisuj¹ odpowiednio: temperaturê powietrza, stopieñ nas³onecznienia, ciœnienie atmosferyczne, prêdkoœæ wiatru, wilgotnoœæ, temperaturê punktu rosy, zachmurzenie i ponownie stopieñ nas³onecznienia, tym razem generowany przez pogodowe API (Photovoltaic Geographical Information System). Ostatnia zmienna (icon) przyjmuje tylko 7 ró¿nych wartoœci, co sugeruje, ¿e mo¿e reprezentowaæ "obecny stan pogody" (ikonê), obliczany przez czujnik lub, co jest bardziej prawdopodobne, dostarczany przez pogodowe API. Zdroworozs¹dkowo nas³onecznienie powinno pe³niæ kluczow¹ rolê przy generowaniu energii przez panele s³oneczne, zatem podwojenie obserwacji w tym przypadku zdaje siê byæ ca³kowicie uzasadnione.
 
 ### Po³o¿enie s³oñca
-
-```{r sun_data}
+```{r sun_data, echo=FALSE}
 lapply(solar_data[, c('altitude', 'azimuth', 'dist')], summary)
 ```
- *Azimuth* to azymut, czyli  k¹t zawarty miêdzy pó³nocn¹ czêœci¹ po³udnika odniesienia a danym kierunkiem poziomym. Zmienna *altitude* opisuje wysokoœæ, prawdopodobnie s³oñca nad horyzontem, poniewa¿ jej wartoœci rosn¹ do godzin po³udniowych, a nastêpnie malej¹. Zmienna *dist* jest taka sama dla wszystkich czujników oraz zmienia siê ka¿dego dnia. Przygl¹daj¹c siê wykresowi zale¿noœci jej wartoœci od *day*(czyli dnia roku) ³atwo zauwa¿yæ cyklicznoœæ. Prawdopodobnie okreœla ona odleg³oœæ Ziemi od S³oñca w danym dniu i nie pochodzi bezpoœrednio od czujnika.
 
-```{r plot_1}
+ *Azimuth* to azymut, czyli  k¹t zawarty miêdzy pó³nocn¹ czêœci¹ po³udnika odniesienia, a danym kierunkiem poziomym. Zmienna *altitude* opisuje wysokoœæ, prawdopodobnie s³oñca nad horyzontem, poniewa¿ jej wartoœci rosn¹ do godzin po³udniowych, a nastêpnie malej¹. Zmienna *dist* jest taka sama dla wszystkich w danym dniu. Wynika to prawdopodobnie z faktu, ¿e czujniki znajduj¹ siê na podobnej szerokoœci geograficznej. Przygl¹daj¹c siê wykresowi zale¿noœci jej wartoœci od *day*(czyli dnia roku) ³atwo zauwa¿yæ cyklicznoœæ. Prawdopodobnie okreœla ona odleg³oœæ Ziemi od S³oñca w danym dniu i nie pochodzi bezpoœrednio od czujnika.
+
+```{r plot_1, fig.align = 'center', echo=FALSE}
 ggplot() + geom_line(data = solar_data, aes(x = day, y = dist)) + labs(title="Zmiana atrybutu dist w dniach roku")
 ```
 
 ### PCNM
-```{r pcnm_data}
+```{r pcnm_data, echo=FALSE}
 lapply(solar_data[, 33:47], summary)
 ```
-Atrybuty PCNM (z angielksiego Principal coordinates of neighbour matrices) to najprawdopodobniej zmienne pozwalaj¹ce opisaæ dok³adniej po³o¿enie ka¿dego czujnika wzglêdem innych czujnikóW. Pozwalaj¹ na bardziej wnikliw¹ analizê po³o¿enia dla ka¿dego z czujników poprzez stworzenie w³asnej macierzy s¹siedztwa dla ka¿dego z nich. Wartoœci tych parametrów s¹ sta³e dla *idsito*.
+Atrybuty PCNM (z angielksiego Principal coordinates of neighbour matrices) to najprawdopodobniej zmienne pozwalaj¹ce opisaæ dok³adniej po³o¿enie ka¿dego czujnika wzglêdem innych czujników. Pozwalaj¹ na bardziej wnikliw¹ analizê po³o¿enia dla ka¿dego z czujników poprzez stworzenie w³asnej macierzy s¹siedztwa dla ka¿dego z nich. Wartoœci tych parametrów s¹ sta³e dla *idsito* (ka¿dego czujnika).
 
 ### Atrybuty *I
-```{r}
+```{r attributes_i, echo=FALSE}
 lapply(solar_data[, c(20:26, 30:32, 49)], summary)
 ```
-Atrybuty pogodowe z *i* na koñcu zapewne s¹ wynikiem transformacji wartoœci tych samych atrybutów bez litery *i*. Wydaje siê byæ prawdopodobne, ¿e do obliczenia ich wartoœci pos³u¿y³, wspomniany w poprzedniej grupie atrybutów, aglorytm rozwi¹zuj¹cy problemem autokorelacji przestrzennej, wynikaj¹cej z bliskiego po³o¿enia czujnikóW.
+
+Atrybuty pogodowe z *i* na koñcu zapewne s¹ wynikiem transformacji wartoœci tych samych atrybutów bez litery *i*. Wydaje siê byæ prawdopodobne, ¿e do obliczenia ich wartoœci pos³u¿y³, wspomniany w poprzedniej grupie atrybutów, aglorytm rozwi¹zuj¹cy problemem autokorelacji przestrzennej, wynikaj¹cej z bliskiego po³o¿enia czujników.
 
 ### Energia
-```{r energy_data}
+```{r energy_data, echo=FALSE}
 lapply(solar_data["kwh"], summary)
 ```
-Ostatni analizowany atrybut to znormalizowana do przedzia³u <0:1> wartoœæ wytworzonej energii przez dany czujnik w danym dniu o danej godzinie. Wartoœæ tej zmiennej ma docelowo zostaæ "przewidziana" na podstawie wartoœci pozosta³ych parametrów.
+Ostatni analizowany atrybut to znormalizowana do przedzia³u <0:1> iloœæ wytworzonej energii przez dany czujnik w danym dniu o danej godzinie. Wartoœæ tej zmiennej ma docelowo zostaæ "przewidziana" na podstawie wartoœci pozosta³ych parametrów.
 
 ## Interaktywny wykres
-```{r interactive_plot, fig.width=9, fig.height=7, fig.align='center'}
-solar_data_monthYear <-  solar_data %>% mutate(month_year = format(as.POSIXct(data), "%Y/%m")) %>% group_by(idsito, month_year) %>% summarise(sum_of_kwh = sum(kwh))
-plot <- ggplot() + geom_line(data=solar_data_monthYear, aes(x=month_year, y=sum_of_kwh, group=idsito, color=factor(x = 1*idsito, labels=c(1:17)))) + labs(color="Legenda") + labs(title="Miesiêczna produkcja energi dla czujników", x="year_month") +
+```{r interactive_plot, fig.width=9, fig.height=7, fig.align='center', echo=FALSE}
+solar_data_monthYear <-  solar_data[complete.cases(solar_data), ] %>% mutate(month_year = format(as.POSIXct(data), "%Y/%m")) %>% group_by(idsito, month_year) %>% summarise(sum_of_kwh = sum(kwh))
+plot <- ggplot() + geom_line(data=solar_data_monthYear, aes(x=month_year, y=sum_of_kwh, group=idsito, color=factor(x = 1*idsito, labels=c(1:17)))) + labs(color="Legenda") + labs(title="Miesiêczna produkcja energi per czujnik", x="year_month") +
 theme(axis.text.x=element_text(angle=90, vjust=0.5), axis.title.x = element_text(vjust=2.5))
 ggplotly(plot)
 ```
-Powy¿szy interaktywny wykres pozwala porównaæ sumê wyprodukowanej energii przez czujniki w ka¿dym miesi¹cu. 
+
+Powy¿szy interaktywny wykres pozwala porównaæ sumê wyprodukowanej energii przez czujniki w ka¿dym miesi¹cu obserwacji. 
 
 Analizuj¹c wykres mo¿na dojœæ do nastêpuj¹cych wniosków:
-  * czujniki ulegaj¹ awariom; potencjalne awarie wystêpuj¹ w miejscach drastycznego spadku produkowanej energii do 0 (np. czujnik 16 w sierpniu 2013r., ),
-··* krzywa miesiêcznej sumy produkowanej energii dla grupy czujników ma podobny kszta³t,
-··* czêœæ czujników odnotowa³a bardzo nisk¹ produkcjê energii w styczniu 2013r., efekt ten móg³ byæ spowodowany przykryciem ich przez œnieg
-··* czujnik 10 zdecydowanie lepiej prosperowa³ w ostatnim kwartale 2012 w porównaniu do reszty. 
+
++ czujniki ulegaj¹ awariom; potencjalne awarie wystêpuj¹ w miejscach drastycznego spadku produkowanej energii do 0 (np. czujnik 16 w sierpniu 2013r., ),
++ krzywa miesiêcznej sumy produkowanej energii dla grupy czujników ma podobny kszta³t,
++ czêœæ czujników odnotowa³a bardzo nisk¹ produkcjê energii w styczniu 2013r., efekt ten móg³ byæ spowodowany przykryciem ich przez œnieg
++ czujnik 10 zdecydowanie lepiej prosperowa³ w ostatnim kwartale 2012 w porównaniu do reszty. 
 
 ## Przetwarzanie brakuj¹cych danych
 
-Z niewyjaœnionych przyczyn `r sum(is.na(solar_data))` wartoœci zmiennej *data* zosta³o Ÿle zapisanych po zmianie formatu tej kolumny z tekstu na POSIXct. Z racji ¿e obserwacji tych jest garstka, zosta³y one usuniête. 
+Z niewyjaœnionych przyczyn `r sum(is.na(solar_data))` wartoœci zmiennej *data* zosta³o Ÿle zapisanych po zmianie formatu tej kolumny z tekstu na POSIXct. Z racji tego ¿e obserwacji tych jest garstka, zosta³y one usuniête. 
 
-W pierwotnym zbiorze problem pustych danych nie wystêpuje - wszystkie dane na pierwszy rzut oka zdaj¹ siê byæ racjonalne. Po analizie wykresu z poprzedniego rozdzia³u mo¿na zauwa¿yæ problem awarii czujnika, czyli brakuj¹cych pomiarów wyprodukowanej energii przez dany czujnik. Dla stworzenia najlepszego modelu predykcji nale¿y zapewniæ najlepsz¹ jakoœæ pomiarów dla atrybutów najsilniej skorelowanych z *kwh*. W zwi¹zku z tym, brakuj¹ce pomiary *kwh* (gdy wartoœæ wynosi 0), gdy nas³onecznienie ma wartoœæ wiêksz¹ od 0 i takie, które zanotowa³y niezerow¹ produkcjê energii przy zerowym nas³onecznieniu nale¿y rozwa¿yæ ponownie i przypisaæ im bardziej racjonalne wartoœci.
+W pierwotnym zbiorze problem pustych danych nie wystêpuje - wszystkie dane na pierwszy rzut oka zdaj¹ siê byæ racjonalne. Po analizie wykresu z poprzedniego rozdzia³u mo¿na zauwa¿yæ problem awarii czujnika, czyli brakuj¹cych pomiarów wyprodukowanej energii przez dany czujnik. Dla stworzenia najlepszego modelu predykcji nale¿y zapewniæ najlepsz¹ jakoœæ pomiarów dla atrybutów najsilniej skorelowanych z *kwh*. W zwi¹zku z tym, brakuj¹ce pomiary *kwh* (gdy wartoœæ wynosi 0) z nas³onecznieniem o wartoœci wiêkszej od 0 i takie, które zanotowa³y niezerow¹ produkcjê energii przy zerowym nas³onecznieniu nale¿y rozwa¿yæ ponownie i przypisaæ im bardziej racjonalne wartoœci.
 
 Obserwacjom, których *kwh* wynosi³o 0, a nas³onecznienie by³o wiêksze od zera przypisano œredni¹ wartoœæ wytworzonej energii w danej godzinie w danym tygodniu przez dany czujnik. 
 
 ```{r data_repair, warning=FALSE, echo=FALSE}
-solar_data_repaired <- solar_data_copy[complete.cases(solar_data_copy), ] %>% mutate(week = strftime(data, format="%W")) %>% mutate(month = strftime(data, format="%m"))
+solar_data_repaired <- solar_data[complete.cases(solar_data), ] %>% mutate(week = strftime(data, format="%W")) %>% mutate(month = strftime(data, format="%m"))
 solar_data_repaired <- solar_data_repaired %>% group_by(idsito, anno, week, ora) %>% mutate(kwh = ifelse(kwh == 0 & (irradiamento > 0 | irr_pvgis_mod > 0), mean(kwh), kwh))
 solar_data_repaired <- solar_data_repaired %>% group_by(idsito, anno, week, ora) %>% mutate(irradiamento = ifelse(irradiamento == 0 && kwh > 0, mean(irradiamento), irradiamento))
 solar_data_repaired <- solar_data_repaired %>% group_by(idsito, anno, week, ora) %>% mutate(irr_pvgis_mod = ifelse(irr_pvgis_mod == 0 && kwh > 0, mean(irradiamento), irradiamento))
 ```
 
 ## Korelacja atrybutów
-Stworzono macierz korelacji pomiêdzy (prawie)wszystkimi atrybutami (bez atrybutów: "data" oraz "idsito")
+Zosta³a stworzona macierz korelacji pomiêdzy wszystkimi atrybutami z wyj¹tkiem atrybutu *data*, poniewa¿ nie zawiera on liczb.
 ```{r corr_matrix, fig.width=10, fig.height=10, echo=FALSE}
 #cor <- rcorr(as.matrix(solar_data[, !names(solar_data) %in% c("data", "idsito")]))
-corr_matrix <- cor(as.matrix(solar_data[, !names(solar_data) %in% c("data", "anno")]), method = "spearman")
+corr_matrix <- cor(as.matrix(solar_data_repaired[, -which(names(solar_data_repaired) %in% c("data", "month", "week"))], method = "spearman"))
 corrplot(as.matrix(corr_matrix), order = "FPC", type="lower", tl.col = "black", tl.srt = 45)
 ```
-Analizuj¹c powy¿sz¹ macierz pod k¹tem korelacji atrybutu *kwh* z pozosta³ymiy atrybutami mo¿na ³atwo zauwa¿yæ odwrotn¹ korelacjê z wartoœci¹ *humidity*(wilgotnoœæ) co jest logiczne, poniewa¿ opad deszczu, któremu towarzysz¹ chmury, skutecznie zmniejsza iloœæ wytwarzanej energii przez panel s³oneczny.
-Wystêpuje równie¿ odwrotna korelacja z wartoœci¹ atrybutu azimuthi.
 
-Co najwa¿niejsze, atrybut *kwh* jest skorelowany silnie z wartoœciami *irri* oraz *irri_pvgis_mod*, czyli atrybutami opisuj¹cymi nas³onecznienie.
+Analizuj¹c powy¿sz¹ macierz pod k¹tem korelacji atrybutu *kwh* z pozosta³ymi na pierwszy rzut oka widaæ, ¿e atrybut *kwh* jest silnie skorelowany z wartoœciami *irri* oraz *irri_pvgis_mod*, czyli atrybutami opisuj¹cymi nas³onecznienie. 
+
+Pondato mo¿na zauwa¿yæ odwrotn¹ korelacjê z wartoœci¹ *humidity*(wilgotnoœæ).Jest to zrozumia³e, poniewa¿ opad deszczu któremu towarzysz¹ chmury, zmniejsza nas³onecznienie, a co za tym idzie - iloœæ wytwarzanej energii przez panel s³oneczny. Wystêpuje równie¿ odwrotna korelacja z wartoœci¹ atrybutu azimuthi.
 
 Mo¿na tak¿e zauwa¿yæ na niektórych atrybutach s³ab¹ odwrotn¹ korelacjê pomiêdzy parami atrybut-atrybuti.
 
 ## Próba stworzenia regresora
+<div class="hidecode"></div>
 ```{r regessor_creation, warning=FALSE, echo=FALSE, message=FALSE, error=FALSE}
-
+solar_data_repaired <- solar_data_repaired %>% select(-c(data, month, week))
 #getMonthsMean <- function(dataset, id, yearNumb, monthNumb, hour) {
 #  cols_kwh <- dataset %>% filter(idsito == id & anno != yearNumb & month == monthNumb & ora == hour) %>% select(kwh)
 #  return(mean(cols_kwh$kwh))
@@ -155,7 +173,6 @@ Mo¿na tak¿e zauwa¿yæ na niektórych atrybutach s³ab¹ odwrotn¹ korelacjê pomiêdzy 
 #  mutate(kwh = ifelse(sum(kwh) == 0 & idsito == 0.4 & anno == 2013 & month == "08", getMonthsMean(solar_data_repaired, idsito, anno, month, ora), kwh)) #próba uzupe³nienia brakuj¹cych wartoœci czujnika 16 - jako œrednia miesi¹ca z innego roku
 solar_data_repaired <- solar_data_repaired %>% filter(idsito != 0.25 & idsito != 0.4) #usuniêcie pomiarów z czujnika 10
 #solar_data_repaired$kwh[is.na(solar_data_repaired$kwh)] <- 0 #przywrócenie wartoœci 0 dla nieuzupe³nionych elementów
-solar_data_repaired <- solar_data_repaired %>% select(-c(data,month, week)) #wyrzucenie nie
 
 set.seed(23) #kod zapewniaj¹cy powtarzalnoœæ wyników
 
@@ -193,18 +210,18 @@ fitGBM <- train(kwh ~ .,
 #fitLARS$results$RMSE
 #fitGBM$results$RMSE
 ```
-Przed przyst¹pieniem do stworzenia modelu regresji, ze zbioru danych usuniêto pomiary dotycz¹ce odstaj¹cego czujnika 10 oraz wadliwego czujnika 16. W ten sposób wyniki algorytmów predykcji bêd¹ bardziej rzetelne.
-Wartoœci rmse wygl¹daj¹ nastêpuj¹co:
-··* Regresja liniowa: `r min(fitLM$results$RMSE)`
-··* Least angle regression: `r min(fitLARS$results$RMSE)`
-··* Uczenie maszynowe: `r min(fitGBM$results$RMSE)`
+Przed przyst¹pieniem do stworzenia modelu regresji, ze zbioru danych usuniêto pomiary dotycz¹ce odstaj¹cego czujnika 10 oraz wadliwego czujnika 16, aby wyniki algorytmów predykcji by³y dok³adniejsze.
 
-Stworzono 3 modele regresji u¿ywaj¹ce metod: regresji liniowej, least angle regression, uczenia maszynowego. Najlepszy wyniki zanotowano dla ostatniego algorytmu, którego b³¹d œredniokwadratowy wyniós³ `r min(fitGBM$results$RMSE)`.
+Stworzono 3 modele regresji u¿ywaj¹ce metod: regresji liniowej, least angle regression, uczenia maszynowego. Najlepszy wyniki zanotowano dla ostatniego algorytmu, którego b³¹d œredniokwadratowy wyniós³ `r min(fitGBM$results$RMSE)`. Najlepsze wartoœci RMSE dla iteracji algorytmów wygl¹daj¹ nastêpuj¹co:
 
-W fazie testowej wykorzystywano równie¿ algorytm random forest, którego b³¹d œredniokwadratowy wypada³ jeszcze lepiej, natomiast ³atwo mo¿na by³o spostrzec jego przeuczenie, wynikaj¹ce z przypisania najwiêkszych wag atrybutom na zdrowy rozs¹dek ma³o istotnym (annoy, day, lat...).
++ Regresja liniowa: `r min(fitLM$results$RMSE)`
++ Least angle regression: `r min(fitLARS$results$RMSE)`
++ Uczenie maszynowe: `r min(fitGBM$results$RMSE)`
+
+W fazie testowej wykorzystywano równie¿ algorytm random forest, którego b³¹d œredniokwadratowy wypada³ jeszcze lepiej, natomiast ³atwo mo¿na by³o spostrzec jego przeuczenie, wynikaj¹ce z przypisania najwiêkszych wag atrybutom na zdrowy rozs¹dek ma³o istotnym (*anno*, *day*, *lat*...).
 
 ## Analiza modelu regresji
 ```{r regressor_rating, echo=FALSE}
-varImp(fitGBM)
+varImp(fitGBM, cuts=10)
 ```
-Jak widaæ, do przewidzenia iloœci wytworzonej energii przez panel s³oneczny najlepiej nadaj¹ siê dane dotycz¹ce nas³onecznienia (*irradiamento*, *irri*), co nie jest ¿adnym zaskoczeniem. Dalej wymienione atrybuty s¹ znacznie mniej istotne. Trzecim w kolejnoœci (co ciekawe) atrybutem jest godzina (*ora*), co oznacza, ¿e wytworzona energia jest podobna dla dwóch obserwacji dokonanych w ró¿nych dnaich, ale o tych samych godzinach. Nastêpne w kolejnoœci atrybuty opisuj¹ wilgotnoœæ, nas³onecznienie, po³o¿enie s³oñca i zachmurzenie. 
+Jak widaæ, do przewidzenia iloœci wytworzonej energii przez panel s³oneczny najlepiej nadaj¹ siê dane dotycz¹ce nas³onecznienia (*irradiamento*, *irri*), co nie jest ¿adnym zaskoczeniem. Dalej wymienione atrybuty s¹ znacznie mniej istotne. Trzecim (co ciekawe) w kolejnoœci atrybutem jest godzina (*ora*). Nastêpne w kolejnoœci atrybuty opisuj¹ wilgotnoœæ, nas³onecznienie, po³o¿enie s³oñca i zachmurzenie. Wartoœci pozosta³ych atrybutów s¹ praktycznie nieistotne do predykcji wyprodukowanej energii.
